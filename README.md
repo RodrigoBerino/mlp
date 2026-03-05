@@ -1,6 +1,6 @@
-# MLP Multiclasse com Softmax
+# MLP Multiclasse
 
-Uma implementação de rede neural *fully-connected* (Perceptron Multicamadas) para classificação multiclasse, escrita do zero em C++20.
+Uma implementação de rede neural _fully-connected_ (Perceptron Multicamadas) para classificação multiclasse, escrita do zero em C++20.
 
 Nenhuma biblioteca de ML externa é usada — apenas a STL e GoogleTest para testes.
 
@@ -19,30 +19,30 @@ Este projeto implementa um MLP completo utilizando:
 
 ## Funcionalidades
 
-| Funcionalidade | Status |
-|---|---|
-| Álgebra linear (`Vector<T>`, `Matrix<T>`) | ✓ |
-| Ativações: Sigmoid, ReLU, Tanh, Softmax | ✓ |
-| Camada fully-connected com Xavier init | ✓ |
-| Cross Entropy + MSE | ✓ |
-| MLP multi-camada com backpropagation | ✓ |
-| SGD / Mini-batch com shuffle | ✓ |
-| Pipeline de dados (CSV, MinMax, One-hot) | ✓ |
-| Métricas multiclasse (F1, precisão, recall) | ✓ |
-| Validation split + Early stopping | ✓ |
-| L2 Regularization (weight decay) | ✓ |
-| CI/CD via GitHub Actions | ✓ |
+| Funcionalidade                              | Status |
+| ------------------------------------------- | ------ |
+| Álgebra linear (`Vector<T>`, `Matrix<T>`)   | ✓      |
+| Ativações: Sigmoid, ReLU, Tanh, Softmax     | ✓      |
+| Camada fully-connected com Xavier init      | ✓      |
+| Cross Entropy + MSE                         | ✓      |
+| MLP multi-camada com backpropagation        | ✓      |
+| SGD / Mini-batch com shuffle                | ✓      |
+| Pipeline de dados (CSV, MinMax, One-hot)    | ✓      |
+| Métricas multiclasse (F1, precisão, recall) | ✓      |
+| Validation split + Early stopping           | ✓      |
+| L2 Regularization (weight decay)            | ✓      |
+| CI/CD via GitHub Actions                    | ✓      |
 
 ---
 
 ## Dependências
 
-| Dependência | Versão | Uso |
-|---|---|---|
-| C++ | 20 | Linguagem |
-| CMake | ≥ 3.20 | Build system |
-| GCC | ≥ 13 | Compilador |
-| GoogleTest | 1.14.0 | Framework de testes (via FetchContent) |
+| Dependência | Versão | Uso                                    |
+| ----------- | ------ | -------------------------------------- |
+| C++         | 20     | Linguagem                              |
+| CMake       | ≥ 3.20 | Build system                           |
+| GCC         | ≥ 13   | Compilador                             |
+| GoogleTest  | 1.14.0 | Framework de testes (via FetchContent) |
 
 Nenhuma outra dependência é necessária. GoogleTest é baixado automaticamente pelo CMake.
 
@@ -106,7 +106,7 @@ cmake -B build -G Ninja
 cmake --build build --parallel
 ```
 
-O build produz apenas executáveis de teste — a biblioteca é *header-only* e não gera `.so` ou `.a`.
+O build produz apenas executáveis de teste — a biblioteca é _header-only_ e não gera `.so` ou `.a`.
 
 ---
 
@@ -290,6 +290,7 @@ O dataset deve ser um arquivo CSV com:
 - **Posição do label:** por padrão, a última coluna
 
 Exemplo (`train.csv`):
+
 ```
 gender,raisedhands,VisITedResources,AnnouncementsView,Discussion,Class
 M,15,16,2,20,L
@@ -306,22 +307,22 @@ As classes serão ordenadas alfabeticamente e mapeadas para índices one-hot.
 
 ## Cobertura de Testes
 
-| Módulo | Arquivo de Teste | Testes |
-|---|---|---|
-| Infraestrutura | `test_placeholder.cpp` | 1 |
-| Vector | `test_vector.cpp` | ~20 |
-| Matrix | `test_matrix.cpp` | ~20 |
-| Ativações | `test_activations.cpp` | ~32 |
-| Layer | `test_layer.cpp` | ~27 |
-| Loss | `test_loss.cpp` | ~20 |
-| MLP | `test_mlp.cpp` | ~22 |
-| Trainer/SGD | `test_training.cpp` | ~25 |
-| Data Pipeline | `test_data.cpp` | ~15 |
-| Métricas | `test_metrics.cpp` | ~20 |
-| Mini-batch | `test_minibatch.cpp` | ~18 |
-| Validação/ES | `test_validation.cpp` | 16 |
-| Regularização | `test_regularization.cpp` | 18 |
-| **Total** | | **305** |
+| Módulo         | Arquivo de Teste          | Testes  |
+| -------------- | ------------------------- | ------- |
+| Infraestrutura | `test_placeholder.cpp`    | 1       |
+| Vector         | `test_vector.cpp`         | ~20     |
+| Matrix         | `test_matrix.cpp`         | ~20     |
+| Ativações      | `test_activations.cpp`    | ~32     |
+| Layer          | `test_layer.cpp`          | ~27     |
+| Loss           | `test_loss.cpp`           | ~20     |
+| MLP            | `test_mlp.cpp`            | ~22     |
+| Trainer/SGD    | `test_training.cpp`       | ~25     |
+| Data Pipeline  | `test_data.cpp`           | ~15     |
+| Métricas       | `test_metrics.cpp`        | ~20     |
+| Mini-batch     | `test_minibatch.cpp`      | ~18     |
+| Validação/ES   | `test_validation.cpp`     | 16      |
+| Regularização  | `test_regularization.cpp` | 18      |
+| **Total**      |                           | **305** |
 
 ---
 
@@ -340,11 +341,11 @@ O pipeline falha se qualquer teste falhar ou se houver warnings de compilação.
 
 ## Documentação Técnica
 
-| Arquivo | Conteúdo |
-|---|---|
-| [`docs/architecture.md`](docs/architecture.md) | Arquitetura e descrição dos módulos |
-| [`docs/mlp_math.md`](docs/mlp_math.md) | Fundamentação matemática completa |
-| [`docs/training_pipeline.md`](docs/training_pipeline.md) | Fluxo de dados ponta-a-ponta |
+| Arquivo                                        | Conteúdo                            |
+| ---------------------------------------------- | ----------------------------------- |
+| [`architecture.md`](architecture.md)           | Arquitetura e descrição dos módulos |
+| [`mlp_math.md`](mlp_math.md)                   | Fundamentação matemática completa   |
+| [`training_pipeline.md`](training_pipeline.md) | Fluxo de dados ponta-a-ponta        |
 
 ---
 
