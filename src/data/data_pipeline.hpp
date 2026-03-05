@@ -101,7 +101,15 @@ public:
         all_features.reserve(n);
         all_labels.reserve(n);
 
-        for (const auto& row : csv.rows) {
+        for (std::size_t row_idx = 0; row_idx < csv.rows.size(); ++row_idx) {
+            const auto& row = csv.rows[row_idx];
+            if (row.size() != n_cols) {
+                throw std::invalid_argument(
+                    "DataPipeline: row " + std::to_string(row_idx + 1) +
+                    " has " + std::to_string(row.size()) +
+                    " field(s), expected " + std::to_string(n_cols) +
+                    " (same as header)");
+            }
             std::vector<T> feat;
             feat.reserve(n_feat);
             for (std::size_t j = 0; j < n_cols; ++j) {

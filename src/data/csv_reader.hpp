@@ -31,6 +31,10 @@ inline CsvData read_csv(const std::string& path) {
     bool header_done = false;
 
     while (std::getline(file, line)) {
+        // Strip trailing \r to handle Windows CRLF line endings on Linux
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
         if (line.empty()) { continue; }
 
         std::vector<std::string> fields;

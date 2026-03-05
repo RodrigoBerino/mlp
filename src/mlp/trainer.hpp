@@ -2,6 +2,7 @@
 // Phase 6  — Trainer: SGD / Mini-batch training loop with epoch logging.
 // Phase 9  — Mini-batch with shuffle.
 // Phase 10 — Validation split + Early stopping + Best-model restore.
+// Phase 11 — L2 Regularization (weight decay + penalty in reported loss).
 //
 // Mini-batch training loop per epoch:
 //   shuffle indices (optional)
@@ -9,20 +10,20 @@
 //       for each sample (x, y) in batch:
 //           ŷ = mlp.forward(x)
 //           loss += CE(ŷ, y)
-//           correct += (argmax(ŷ) == argmax(y))
 //           mlp.backward(y)          ← accumulates grad_W, grad_b
 //       mlp.step(lr / B)             ← applies mean gradient, zeros grads
+//       apply_weight_decay(mlp, (lr/B)*lambda)  ← L2 weight decay
+//   epoch_loss = mean_data_loss + lambda * Σ W²  ← includes reg penalty
 //
-// With batch_size=1 (default) the behaviour is identical to plain SGD.
-// After each epoch: store mean loss and accuracy.
-// evaluate() computes metrics without touching gradients or weights.
+// With batch_size=1 (default) and lambda=0 the behaviour is identical to
+// plain SGD (backward compatible with Phases 6–10).
 //
 // train_with_validation():
 //   - Trains on train_data only.
-//   - Evaluates on val_data after every epoch (no weight update).
-//   - Stores train_loss_history, val_loss_history, val_macro_f1_history.
-//   - Implements early stopping: if val_loss does not improve by min_delta
-//     for 'patience' consecutive epochs, training halts.
+//   - Evaluates on val_data after every epoch (no weight update, no L2 term).
+//   - Stores train_loss_history (data + penalty), val_loss_history (data only),
+//     val_macro_f1_history.
+//   - Implements early stopping on val_loss (pure data loss).
 //   - Saves a weight snapshot whenever val_loss improves; restores it at end.
 
 #pragma once
@@ -30,6 +31,7 @@
 #include "mlp/mlp.hpp"
 #include "core/vector.hpp"
 #include "loss/cross_entropy.hpp"
+#include "loss/l2_regularization.hpp"
 #include "evaluation/metrics.hpp"
 
 #include <algorithm>
@@ -65,10 +67,8 @@ struct Dataset {
 // ------------------------------------------------------------------
 // EarlyStoppingConfig<T>
 //
-// patience  — number of consecutive epochs without improvement before
-//             training is halted (default 5).
-// min_delta — minimum decrease in val_loss to count as an improvement
-//             (default 1e-4).  Use 0 to stop on any non-decrease.
+// patience  — epochs without improvement before training halts.
+// min_delta — minimum decrease in val_loss to count as improvement.
 // ------------------------------------------------------------------
 template<typename T>
 struct EarlyStoppingConfig {
@@ -82,7 +82,7 @@ struct EarlyStoppingConfig {
 template<typename T, typename Activation>
 class Trainer {
 public:
-    // Snapshot type: W and b for every layer, ordered by layer index.
+    // Snapshot type: W and b per layer.
     using LayerWeights   = std::pair<Matrix<T>, Vector<T>>;
     using WeightSnapshot = std::vector<LayerWeights>;
 
@@ -90,12 +90,9 @@ public:
 
     // ------------------------------------------------------------------
     // train(): mini-batch (or SGD) training over 'epochs' passes.
-    // Clears epoch_losses_ / epoch_accuracies_ before running.
     //
-    // batch_size   — samples per gradient update (default 1 = SGD).
-    //                The last batch in each epoch may be smaller.
-    // shuffle      — if true, sample order is randomised each epoch.
-    // shuffle_seed — RNG seed for reproducible shuffling.
+    // lambda — L2 regularization strength (default 0 = no regularization).
+    //          Reported epoch_losses include the L2 penalty term.
     // ------------------------------------------------------------------
     void train(MLP<T, Activation>& mlp,
                const Dataset<T>&   data,
@@ -103,7 +100,8 @@ public:
                T                   learning_rate,
                std::size_t         batch_size   = 1,
                bool                shuffle      = false,
-               std::uint32_t       shuffle_seed = 42) {
+               std::uint32_t       shuffle_seed = 42,
+               T                   lambda       = T{0}) {
         if (data.empty()) {
             throw std::invalid_argument("Trainer::train: empty dataset");
         }
@@ -123,7 +121,6 @@ public:
         epoch_accuracies_.reserve(epochs);
 
         const std::size_t n = data.size();
-
         std::vector<std::size_t> idx(n);
         std::iota(idx.begin(), idx.end(), 0u);
         std::mt19937 rng(shuffle_seed);
@@ -133,30 +130,45 @@ public:
                 std::shuffle(idx.begin(), idx.end(), rng);
             }
 
-            T           total_loss = T{0};
-            std::size_t correct    = 0;
+            T           total_data_loss = T{0};
+            std::size_t correct         = 0;
 
             std::size_t start = 0;
             while (start < n) {
                 const std::size_t end       = std::min(start + batch_size, n);
                 const std::size_t cur_batch = end - start;
+                const T           lr_eff    =
+                    learning_rate / static_cast<T>(cur_batch);
 
                 for (std::size_t bi = start; bi < end; ++bi) {
                     const std::size_t i     = idx[bi];
                     const Vector<T>&  y_hat = mlp.forward(data.inputs[i]);
 
-                    total_loss += loss_fn_.compute_loss(y_hat, data.labels[i]);
-                    correct    += (argmax(y_hat) == argmax(data.labels[i]))
-                                  ? 1u : 0u;
+                    total_data_loss +=
+                        loss_fn_.compute_loss(y_hat, data.labels[i]);
+                    correct += (argmax(y_hat) == argmax(data.labels[i]))
+                               ? 1u : 0u;
 
                     mlp.backward(data.labels[i]);
                 }
 
-                mlp.step(learning_rate / static_cast<T>(cur_batch));
+                mlp.step(lr_eff);
+
+                // L2 weight decay — equivalent to gradient: dW += λ*W
+                if (lambda > T{0}) {
+                    apply_weight_decay(mlp, lr_eff * lambda);
+                }
+
                 start = end;
             }
 
-            epoch_losses_.push_back(total_loss / static_cast<T>(n));
+            // Epoch loss = mean data loss + L2 penalty on current weights
+            T epoch_loss = total_data_loss / static_cast<T>(n);
+            if (lambda > T{0}) {
+                epoch_loss += compute_l2_penalty(mlp, lambda);
+            }
+
+            epoch_losses_.push_back(epoch_loss);
             epoch_accuracies_.push_back(
                 static_cast<T>(correct) / static_cast<T>(n));
         }
@@ -164,19 +176,13 @@ public:
 
     // ------------------------------------------------------------------
     // train_with_validation(): mini-batch training with per-epoch
-    // validation, early stopping, and best-model restoration.
+    // validation, early stopping, best-model restoration, and optional
+    // L2 regularization.
     //
-    // Populates: train_loss_history_, val_loss_history_,
-    //            val_macro_f1_history_.
-    //
-    // Early stopping:
-    //   if val_loss does not decrease by at least es.min_delta for
-    //   es.patience consecutive epochs → training halts.
-    //
-    // Best model:
-    //   A weight snapshot is saved whenever val_loss improves.
-    //   At the end of training (early stop or normal) the best
-    //   snapshot is restored to the MLP.
+    // lambda — L2 regularization strength (default 0 = no regularization).
+    //   train_loss_history includes the L2 penalty (total regularized loss).
+    //   val_loss_history is the pure data loss on the validation set
+    //   (no penalty; early stopping is based on val_loss only).
     // ------------------------------------------------------------------
     void train_with_validation(
         MLP<T, Activation>&    mlp,
@@ -187,7 +193,8 @@ public:
         std::size_t            batch_size   = 1,
         bool                   shuffle      = false,
         std::uint32_t          shuffle_seed = 42,
-        EarlyStoppingConfig<T> es           = {})
+        EarlyStoppingConfig<T> es           = {},
+        T                      lambda       = T{0})
     {
         if (train_data.empty()) {
             throw std::invalid_argument(
@@ -231,31 +238,45 @@ public:
                 std::shuffle(idx.begin(), idx.end(), rng);
             }
 
-            T train_loss = T{0};
+            T train_data_loss = T{0};
             std::size_t start = 0;
             while (start < n) {
                 const std::size_t end       = std::min(start + batch_size, n);
                 const std::size_t cur_batch = end - start;
+                const T           lr_eff    =
+                    learning_rate / static_cast<T>(cur_batch);
 
                 for (std::size_t bi = start; bi < end; ++bi) {
                     const std::size_t i     = idx[bi];
-                    const Vector<T>&  y_hat = mlp.forward(train_data.inputs[i]);
-                    train_loss += loss_fn_.compute_loss(y_hat, train_data.labels[i]);
+                    const Vector<T>&  y_hat =
+                        mlp.forward(train_data.inputs[i]);
+                    train_data_loss +=
+                        loss_fn_.compute_loss(y_hat, train_data.labels[i]);
                     mlp.backward(train_data.labels[i]);
                 }
-                mlp.step(learning_rate / static_cast<T>(cur_batch));
+                mlp.step(lr_eff);
+
+                if (lambda > T{0}) {
+                    apply_weight_decay(mlp, lr_eff * lambda);
+                }
                 start = end;
             }
-            train_loss_history_.push_back(train_loss / static_cast<T>(n));
 
-            // ---- Evaluate on val_data (no weight update) -------------
+            // Train loss = mean data loss + L2 penalty
+            T tl = train_data_loss / static_cast<T>(n);
+            if (lambda > T{0}) {
+                tl += compute_l2_penalty(mlp, lambda);
+            }
+            train_loss_history_.push_back(tl);
+
+            // ---- Evaluate on val_data (pure data loss, no L2 term) ---
             const T val_loss = evaluate(mlp, val_data);
             val_loss_history_.push_back(val_loss);
 
             const T val_f1 = compute_val_macro_f1(mlp, val_data);
             val_macro_f1_history_.push_back(val_f1);
 
-            // ---- Early stopping logic --------------------------------
+            // ---- Early stopping (on val_loss only) ------------------
             if (val_loss < best_val_loss - es.min_delta) {
                 best_val_loss    = val_loss;
                 patience_counter = 0;
@@ -268,7 +289,6 @@ public:
             }
         }
 
-        // Restore best weights if we ever saved a snapshot.
         if (!best_snapshot.empty()) {
             restore_snapshot(mlp, best_snapshot);
         }
@@ -276,6 +296,7 @@ public:
 
     // ------------------------------------------------------------------
     // evaluate(): mean CE loss on 'data' without modifying weights.
+    // No L2 penalty is added (pure data loss).
     // ------------------------------------------------------------------
     T evaluate(MLP<T, Activation>& mlp, const Dataset<T>& data) {
         if (data.empty()) {
@@ -293,7 +314,6 @@ public:
 
     // ------------------------------------------------------------------
     // compute_accuracy(): fraction of correctly classified samples.
-    // Returns a value in [0, 1].
     // ------------------------------------------------------------------
     T compute_accuracy(MLP<T, Activation>& mlp, const Dataset<T>& data) {
         if (data.empty()) {
@@ -311,7 +331,7 @@ public:
     }
 
     // ------------------------------------------------------------------
-    // take_snapshot(): copy W and b from every layer of 'mlp'.
+    // take_snapshot(): copy W and b from every layer.
     // ------------------------------------------------------------------
     [[nodiscard]] WeightSnapshot take_snapshot(
         const MLP<T, Activation>& mlp) const
@@ -325,7 +345,7 @@ public:
     }
 
     // ------------------------------------------------------------------
-    // restore_snapshot(): write saved W and b back into every layer.
+    // restore_snapshot(): write saved W and b back.
     // ------------------------------------------------------------------
     void restore_snapshot(MLP<T, Activation>&   mlp,
                           const WeightSnapshot& snap) const
@@ -403,7 +423,6 @@ private:
 
         for (std::size_t i = 0; i < data.size(); ++i) {
             y_true.push_back(data.labels[i]);
-            // forward returns a const ref; copy into y_pred
             y_pred.push_back(Vector<T>(mlp.forward(data.inputs[i])));
         }
 

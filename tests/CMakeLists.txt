@@ -135,3 +135,15 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(test_validation PRIVATE -Wno-free-nonheap-object)
 endif()
 gtest_discover_tests(test_validation)
+
+# ---- Phase 11: L2 Regularization -------------------------------------------
+add_executable(test_regularization
+    test_regularization.cpp
+)
+target_link_libraries(test_regularization
+    PRIVATE mlp_core GTest::gtest_main
+)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(test_regularization PRIVATE -Wno-free-nonheap-object)
+endif()
+gtest_discover_tests(test_regularization)
