@@ -123,3 +123,15 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(test_minibatch PRIVATE -Wno-free-nonheap-object)
 endif()
 gtest_discover_tests(test_minibatch)
+
+# ---- Phase 10: Validation Split + Early Stopping ---------------------------
+add_executable(test_validation
+    test_validation.cpp
+)
+target_link_libraries(test_validation
+    PRIVATE mlp_core GTest::gtest_main
+)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(test_validation PRIVATE -Wno-free-nonheap-object)
+endif()
+gtest_discover_tests(test_validation)
